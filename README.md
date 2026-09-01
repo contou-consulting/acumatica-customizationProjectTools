@@ -102,6 +102,7 @@ Establish a persistent connection to an Acumatica instance. The connection is re
 | Url | | string | Yes | URL of the Acumatica instance |
 | Credential | | PSCredential | Yes | Credentials for authentication |
 | Tenant | -t | string | No | Tenant to authenticate to |
+| SkipCertificateCheck | | switch | No | Disable TLS certificate validation for this connection (e.g. self-signed certs). All subsequent cmdlets using the shared connection inherit the bypass |
 
 **Example:**
 ```powershell

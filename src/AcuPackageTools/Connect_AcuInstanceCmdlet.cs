@@ -36,6 +36,9 @@ namespace AcuPackageTools
         [Alias("t")]
         public string Tenant { get; set; }
 
+        [Parameter(Mandatory = false)]
+        public SwitchParameter SkipCertificateCheck { get; set; }
+
         protected override void ProcessRecord()
         {
             if (AcuConnectionManager.IsConnected)
@@ -46,7 +49,12 @@ namespace AcuPackageTools
 
             try
             {
-                var client = AcuConnectionManager.CreateNewClient();
+                if (SkipCertificateCheck.IsPresent)
+                {
+                    WriteVerbose($"Skipping TLS certificate validation for {Url}");
+                }
+
+                var client = AcuConnectionManager.CreateNewClient(SkipCertificateCheck.IsPresent);
                 var networkCredential = Credential.GetNetworkCredential();
                 var loginRequest = new LoginRequest(
                     networkCredential.UserName,

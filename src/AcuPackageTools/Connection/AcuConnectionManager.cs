@@ -59,12 +59,16 @@ namespace AcuPackageTools.Connection
             }
         }
 
-        public static HttpClient CreateNewClient()
+        public static HttpClient CreateNewClient(bool skipCertificateCheck = false)
         {
             var handler = new HttpClientHandler()
             {
                 CookieContainer = new CookieContainer()
             };
+            if (skipCertificateCheck)
+            {
+                handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
+            }
             var client = new HttpClient(handler, true);
             client.DefaultRequestHeaders.Accept.Add(
                 new MediaTypeWithQualityHeaderValue("application/json"));
