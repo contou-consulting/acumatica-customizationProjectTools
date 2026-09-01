@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading;
 
 namespace AcuPackageTools.Connection
 {
@@ -70,6 +71,9 @@ namespace AcuPackageTools.Connection
                 handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
             }
             var client = new HttpClient(handler, true);
+            // Publish requests (publishBegin) can legitimately run longer than the
+            // 100-second HttpClient default; completion is tracked by polling publishEnd.
+            client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.Accept.Add(
                 new MediaTypeWithQualityHeaderValue("application/json"));
             return client;
