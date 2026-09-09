@@ -27,7 +27,7 @@ namespace AcuPackageTools
         {
             if (ShouldProcess(EffectiveUrl, "Unpublish all customization packages"))
             {
-                using var response = SendRequest(UnpublishAllEndpoint, new UnpublishAllRequest(TenantMode, TenantLoginNames));
+                RunPumped((ct, post) => AcuClient.UnpublishAllAsync(new UnpublishAllRequest(TenantMode, TenantLoginNames), ct));
             }
         }
     }

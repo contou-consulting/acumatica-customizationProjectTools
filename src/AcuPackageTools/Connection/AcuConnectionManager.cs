@@ -1,10 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Management.Automation.Runspaces;
-using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Threading;
 
 namespace AcuPackageTools.Connection
 {
@@ -88,22 +85,6 @@ namespace AcuPackageTools.Connection
         }
 
         public static HttpClient CreateNewClient(bool skipCertificateCheck = false)
-        {
-            var handler = new HttpClientHandler()
-            {
-                CookieContainer = new CookieContainer()
-            };
-            if (skipCertificateCheck)
-            {
-                handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
-            }
-            var client = new HttpClient(handler, true);
-            // Publish requests (publishBegin) can legitimately run longer than the
-            // 100-second HttpClient default; completion is tracked by polling publishEnd.
-            client.Timeout = Timeout.InfiniteTimeSpan;
-            client.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
-            return client;
-        }
+            => AcuClient.CreateHttpClient(skipCertificateCheck);
     }
 }

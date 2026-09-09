@@ -1,7 +1,5 @@
 using System.Management.Automation;
-using System.Text.Json;
 using AcuPackageTools.CmdletBase;
-using AcuPackageTools.Models;
 
 namespace AcuPackageTools
 {
@@ -12,8 +10,7 @@ namespace AcuPackageTools
 
         protected override void PerformApiOperations()
         {
-            using var response = SendRequest(GetPublishedEndpoint);
-            var responseObject = response.Deserialize<GetPublishedResponse>();
+            var responseObject = RunPumped((ct, post) => AcuClient.GetPublishedAsync(ct));
 
             foreach (var log in responseObject.Log)
             {

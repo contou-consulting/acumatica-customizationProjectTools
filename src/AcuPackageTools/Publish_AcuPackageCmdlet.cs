@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
 using System.Management.Automation;
 using System.Net.Http;
-using System.Text.Json;
-using System.Threading;
 using AcuPackageTools.CmdletBase;
 using AcuPackageTools.Models;
 
@@ -70,31 +66,21 @@ namespace AcuPackageTools
                 return;
             }
 
-            using var startResponse =
-                SendRequest(PublishBeginEndpoint,
-                    new PublishBeginRequest(
-                        MergeWithExisting,
-                        OnlyValidate,
-                        DbUpdateOnly,
-                        ExecuteAllScripts,
-                        ProjectNames,
-                        TenantMode,
-                        TenantLoginNames));
+            var request = new PublishBeginRequest(
+                MergeWithExisting,
+                OnlyValidate,
+                DbUpdateOnly,
+                ExecuteAllScripts,
+                ProjectNames,
+                TenantMode,
+                TenantLoginNames);
 
-            HashSet<DateTime> existingTimeStamps = new();
             var progressRecord = new ProgressRecord(1, "Publishing Packages", "Starting publication...");
-            int elapsedSeconds = 0;
 
-            PublishEndResponse responseData;
-            do
-            {
-                using var endResponse = SendRequest(PublishEndEndpoint);
-                responseData = JsonSerializer.Deserialize<PublishEndResponse>(
-                    endResponse.RootElement.GetRawText(), SerializerOptions);
-
-                foreach (var log in responseData.Log)
+            var responseData = RunPumped((ct, post) => AcuClient.PublishAsync(
+                request,
+                onLog: log => post(() =>
                 {
-                    if (existingTimeStamps.Contains(log.Timestamp)) continue;
                     switch (log.LogType)
                     {
                         case "information":
@@ -107,25 +93,21 @@ namespace AcuPackageTools
                             WriteWarning(log.Message);
                             break;
                     }
+                }),
+                onPollTick: elapsedSeconds => post(() =>
+                {
+                    progressRecord.StatusDescription = $"Waiting for completion... ({elapsedSeconds}s)";
+                    WriteProgress(progressRecord);
+                }),
+                cancellationToken: ct));
 
-                    existingTimeStamps.Add(log.Timestamp);
-                }
-
-                elapsedSeconds++;
-                progressRecord.StatusDescription = $"Waiting for completion... ({elapsedSeconds}s)";
-                WriteProgress(progressRecord);
-
-                if (!responseData.IsCompleted && !responseData.IsFailed)
-                    Thread.Sleep(1000);
-
-                if (responseData.IsFailed)
-                    WriteError(
-                        new ErrorRecord(
-                            new HttpRequestException("Customization publish failed. Check the log output for details."),
-                            "AcuPublishFailed",
-                            ErrorCategory.NotSpecified,
-                            ProjectNames));
-            } while (!responseData.IsCompleted && !responseData.IsFailed);
+            if (responseData.IsFailed)
+                WriteError(
+                    new ErrorRecord(
+                        new HttpRequestException("Customization publish failed. Check the log output for details."),
+                        "AcuPublishFailed",
+                        ErrorCategory.NotSpecified,
+                        ProjectNames));
 
             progressRecord.RecordType = ProgressRecordType.Completed;
             WriteProgress(progressRecord);

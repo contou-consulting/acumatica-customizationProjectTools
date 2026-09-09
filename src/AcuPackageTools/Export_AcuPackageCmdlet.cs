@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Management.Automation;
-using System.Text.Json;
 using AcuPackageTools.CmdletBase;
 using AcuPackageTools.Models;
 
@@ -38,10 +37,8 @@ namespace AcuPackageTools
         {
             WriteVerbose($"Exporting project '{ProjectName}' from {EffectiveUrl}");
 
-            using var response = SendRequest(GetProjectEndpoint,
-                new GetProjectRequest(ProjectName, AutoResolveConflicts.IsPresent));
-
-            var responseObject = response.Deserialize<GetProjectResponse>();
+            var responseObject = RunPumped((ct, post) => AcuClient.GetProjectAsync(
+                new GetProjectRequest(ProjectName, AutoResolveConflicts.IsPresent), ct));
 
             if (responseObject.HasConflicts)
             {

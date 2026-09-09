@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Management.Automation;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using AcuPackageTools.Connection;
 
 namespace AcuPackageTools.CmdletBase
@@ -15,7 +17,10 @@ namespace AcuPackageTools.CmdletBase
         private bool _loggedIn;
         private bool _useSharedConnection;
         private string _effectiveUrl;
+        private CancellationTokenSource _cts;
 
+        // Kept in sync with AcuClient.SerializerOptions in AcuPackageTools.Core;
+        // still used directly by Connect-AcuInstance.
         internal static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
@@ -44,6 +49,11 @@ namespace AcuPackageTools.CmdletBase
         [Alias("t")]
         public string Tenant { get; set; }
 
+        [Parameter(Mandatory = false)]
+        public SwitchParameter SkipCertificateCheck { get; set; }
+
+        protected AcuClient AcuClient { get; private set; }
+
         protected override void BeginProcessing()
         {
             // Determine which mode to use
@@ -52,7 +62,8 @@ namespace AcuPackageTools.CmdletBase
                 // One-off mode: credentials provided explicitly
                 _useSharedConnection = false;
                 _effectiveUrl = Url;
-                Client = AcuConnectionManager.CreateNewClient();
+                Client = AcuConnectionManager.CreateNewClient(SkipCertificateCheck.IsPresent);
+                AcuClient = new AcuClient(Client, new AcuClientOptions { Url = _effectiveUrl, Tenant = Tenant });
                 WriteVerbose("Using one-off connection mode");
             }
             else if (AcuConnectionManager.IsConnected)
@@ -61,6 +72,7 @@ namespace AcuPackageTools.CmdletBase
                 _useSharedConnection = true;
                 _effectiveUrl = AcuConnectionManager.Url;
                 Client = AcuConnectionManager.Client;
+                AcuClient = new AcuClient(Client, new AcuClientOptions { Url = _effectiveUrl, Tenant = AcuConnectionManager.Tenant });
                 WriteVerbose($"Using shared connection to {_effectiveUrl}");
             }
             else
@@ -123,45 +135,78 @@ namespace AcuPackageTools.CmdletBase
 
         protected JsonDocument SendRequest(string resource, object body = null)
         {
-            var uriBuilder = new UriBuilder(_effectiveUrl);
-            uriBuilder.Path += resource;
-            var url = uriBuilder.ToString();
-            HttpResponseMessage response;
-            if (body is null)
-            {
-                response = Client.PostAsync(url, new StringContent(string.Empty, Encoding.UTF8, "application/json"))
-                                 .GetAwaiter().GetResult();
-                WriteVerbose("Posting Empty Body to " + url);
-            }
-            else
-            {
-                string requestContent = JsonSerializer.Serialize(body, SerializerOptions);
-                response = Client.PostAsync(url, new StringContent(requestContent, Encoding.UTF8, "application/json"))
-                                 .GetAwaiter().GetResult();
-                WriteVerbose($"Posting content to " + url);
-                WriteVerbose(requestContent);
-            }
+            return RunPumped((ct, post) => AcuClient.SendRequestAsync(resource, body, ct));
+        }
 
-            string responseContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            JsonDocument jDoc = string.IsNullOrWhiteSpace(responseContent)
-                ? default
-                : JsonDocument.Parse(responseContent);
-            if (!response.IsSuccessStatusCode
-             && !string.IsNullOrWhiteSpace(responseContent))
-                throw new HttpRequestException(
-                    $"There was a failure when calling {url} (HTTP {(int)response.StatusCode}): "
-                  + Environment.NewLine
-                  + JsonSerializer.Serialize(jDoc, SerializerOptions));
+        /// <summary>
+        /// Runs an async Core operation while pumping its callbacks onto the
+        /// pipeline thread, where the Write* methods are legal. Core callbacks
+        /// (and the <c>post</c> delegate handed to <paramref name="operation"/>)
+        /// enqueue write actions; this thread drains the queue in FIFO order
+        /// until the task completes, so the observed stream ordering matches the
+        /// old synchronous implementation, including messages queued before a
+        /// failure. The task's exception is rethrown unwrapped.
+        /// </summary>
+        protected T RunPumped<T>(Func<CancellationToken, Action<Action>, Task<T>> operation)
+        {
+            _cts ??= new CancellationTokenSource();
+            using var events = new BlockingCollection<Action>(new ConcurrentQueue<Action>());
 
-            if (!response.IsSuccessStatusCode)
+            void Post(Action write)
             {
-                throw new HttpRequestException(
-                    $"There was a failure when calling {url} (HTTP {(int)response.StatusCode})");
+                try
+                {
+                    events.Add(write);
+                }
+                catch (InvalidOperationException) { } // completed or disposed: drop the message
             }
 
-            WriteVerbose(JsonSerializer.Serialize(jDoc, SerializerOptions));
+            AcuClient.Verbose = message => Post(() => WriteVerbose(message));
+            try
+            {
+                Task<T> task = operation(_cts.Token, Post);
+                task.ContinueWith(
+                    _ =>
+                    {
+                        try
+                        {
+                            events.CompleteAdding();
+                        }
+                        catch (ObjectDisposedException) { }
+                    },
+                    TaskContinuationOptions.ExecuteSynchronously);
 
-            return jDoc;
+                try
+                {
+                    foreach (Action write in events.GetConsumingEnumerable())
+                    {
+                        write();
+                    }
+                }
+                catch
+                {
+                    // A Write* threw (e.g. PipelineStoppedException on Ctrl+C).
+                    // Observe the orphaned task's eventual fault so it never
+                    // surfaces as an unobserved task exception.
+                    task.ContinueWith(t => { _ = t.Exception; }, TaskContinuationOptions.ExecuteSynchronously);
+                    throw;
+                }
+
+                return task.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                AcuClient.Verbose = null;
+            }
+        }
+
+        protected void RunPumped(Func<CancellationToken, Action<Action>, Task> operation)
+        {
+            RunPumped(async (ct, post) =>
+            {
+                await operation(ct, post).ConfigureAwait(false);
+                return true;
+            });
         }
 
         private void Logout()
@@ -199,6 +244,7 @@ namespace AcuPackageTools.CmdletBase
 
         protected override void StopProcessing()
         {
+            _cts?.Cancel();
             if (!_useSharedConnection)
             {
                 Dispose();

@@ -2,7 +2,6 @@ using AcuPackageTools.CmdletBase;
 using System;
 using System.IO;
 using System.Management.Automation;
-using System.Text.Json;
 using AcuPackageTools.Models;
 
 namespace AcuPackageTools
@@ -63,8 +62,7 @@ namespace AcuPackageTools
                     PackageName, PackageDescr,
                     Convert.ToBase64String(fileBytes));
 
-            using var response = SendRequest(ImportEndpoint, request);
-            var responseObject = response.Deserialize<ApiResponseRoot>();
+            var responseObject = RunPumped((ct, post) => AcuClient.ImportPackageAsync(request, ct));
 
             foreach (var log in responseObject.Log)
             {
