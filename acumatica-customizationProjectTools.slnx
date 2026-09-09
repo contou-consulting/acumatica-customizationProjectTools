@@ -15,4 +15,5 @@
   </Folder>
   <Project Path="src/AcuPackageTools/AcuPackageTools.csproj" />
   <Project Path="src/AcuPackageTools.Core/AcuPackageTools.Core.csproj" />
+  <Project Path="tests/AcuPackageTools.Core.UnitTests/AcuPackageTools.Core.UnitTests.csproj" />
 </Solution>
