@@ -43,7 +43,7 @@ namespace AcuPackageTools
             ValueFromPipeline = true,
             ValueFromPipelineByPropertyName = true)]
         [Alias("l")]
-        public int Level { get; set; }
+        public int? Level { get; set; }
 
         protected override void ProcessRecord()
         {
