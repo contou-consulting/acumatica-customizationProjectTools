@@ -17,6 +17,9 @@ jobs:
       - name: Build module in Release mode
         run: dotnet build acumatica-customizationProjectTools.slnx -c Release
 
+      - name: Run .NET unit tests
+        run: dotnet test tests/AcuPackageTools.Core.UnitTests/AcuPackageTools.Core.UnitTests.csproj -c Release --no-build
+
       - name: Install Pester
         shell: pwsh
         run: |

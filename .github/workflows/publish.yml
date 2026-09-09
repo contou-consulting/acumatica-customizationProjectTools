@@ -4,6 +4,9 @@ on:
         tags:
           - '[0-9]*.[0-9]*.[0-9]*'
           - 'v[0-9]*.[0-9]*.[0-9]*'
+permissions:
+  contents: read
+  packages: write
 jobs:
   publish:
     runs-on: windows-latest
@@ -29,6 +32,19 @@ jobs:
     - name: Test Module Manifest before Publish
       shell: pwsh
       run: Test-ModuleManifest -Path .\AcuPackageTools\AcuPackageTools.psd1
+
+    - name: Pack and push AcuPackageTools.Core to NuGet feed
+      shell: pwsh
+      env:
+          NUGET_FEED: ${{ secrets.NUGET_FEED }}
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+          $version = ($env:GITHUB_REF -replace 'refs/tags/', '') -replace '^v', ''
+          dotnet pack src/AcuPackageTools.Core/AcuPackageTools.Core.csproj -c Release /p:Version=$version -o artifacts
+          $feed = if ($env:NUGET_FEED) { $env:NUGET_FEED } else { 'https://nuget.pkg.github.com/contou-consulting/index.json' }
+          $key = if ($env:NUGET_API_KEY) { $env:NUGET_API_KEY } else { $env:GITHUB_TOKEN }
+          dotnet nuget push artifacts/*.nupkg --source $feed --api-key $key --skip-duplicate
 
     - name: Publish to PowerShell Gallery
       shell: pwsh
