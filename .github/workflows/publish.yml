@@ -6,7 +6,7 @@ on:
           - 'v[0-9]*.[0-9]*.[0-9]*'
 permissions:
   contents: read
-  packages: write
+  id-token: write # OIDC token exchange for nuget.org trusted publishing
 jobs:
   publish:
     runs-on: windows-latest
@@ -33,18 +33,18 @@ jobs:
       shell: pwsh
       run: Test-ModuleManifest -Path .\AcuPackageTools\AcuPackageTools.psd1
 
-    - name: Pack and push AcuPackageTools.Core to NuGet feed
+    - name: NuGet login (trusted publishing)
+      uses: NuGet/login@v1
+      id: nuget-login
+      with:
+          user: kvanderstoep
+
+    - name: Pack and push AcuPackageTools.Core to nuget.org
       shell: pwsh
-      env:
-          NUGET_FEED: ${{ secrets.NUGET_FEED }}
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
           $version = ($env:GITHUB_REF -replace 'refs/tags/', '') -replace '^v', ''
           dotnet pack src/AcuPackageTools.Core/AcuPackageTools.Core.csproj -c Release /p:Version=$version -o artifacts
-          $feed = if ($env:NUGET_FEED) { $env:NUGET_FEED } else { 'https://nuget.pkg.github.com/contou-consulting/index.json' }
-          $key = if ($env:NUGET_API_KEY) { $env:NUGET_API_KEY } else { $env:GITHUB_TOKEN }
-          dotnet nuget push artifacts/*.nupkg --source $feed --api-key $key --skip-duplicate
+          dotnet nuget push artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
 
     - name: Publish to PowerShell Gallery
       shell: pwsh
