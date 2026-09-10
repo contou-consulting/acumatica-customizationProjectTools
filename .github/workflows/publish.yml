@@ -13,7 +13,7 @@ on:
                 required: false
                 default: '1.3.0'
 permissions:
-  contents: read
+  contents: write # create GitHub releases
   id-token: write # OIDC token exchange for nuget.org trusted publishing
 jobs:
   publish:
@@ -88,3 +88,18 @@ jobs:
           else {
             Publish-Module -Path .\AcuPackageTools -NuGetApiKey $env:NUGET_API_KEY -Verbose
           }
+
+    - name: Create GitHub release
+      if: env.DRY_RUN != 'true'
+      shell: pwsh
+      env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:RELEASE_TAG already exists; skipping."
+            return
+          }
+          Compress-Archive -Path .\AcuPackageTools -DestinationPath "artifacts/AcuPackageTools-$env:RELEASE_TAG.zip"
+          $notes = (git log -1 --pretty=%B | Out-String).Trim()
+          gh release create $env:RELEASE_TAG (Get-ChildItem artifacts/* | ForEach-Object FullName) --title $env:RELEASE_TAG --notes $notes
