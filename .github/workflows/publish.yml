@@ -16,6 +16,7 @@ permissions:
 jobs:
   publish:
     runs-on: windows-latest
+    environment: production
     env:
       # Manual dispatch is a dry run: everything runs except the actual pushes.
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
