@@ -74,7 +74,8 @@ jobs:
             Get-ChildItem artifacts/*.nupkg | ForEach-Object { Write-Host "  $($_.Name)" }
           }
           else {
-            dotnet nuget push artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_ORG_API_KEY --skip-duplicate
+            $nupkg = (Get-ChildItem artifacts/*.nupkg | Select-Object -First 1).FullName
+            dotnet nuget push $nupkg --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_ORG_API_KEY --skip-duplicate
           }
 
     - name: Publish to PowerShell Gallery
