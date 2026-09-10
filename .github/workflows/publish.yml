@@ -4,11 +4,27 @@ on:
         tags:
           - '[0-9]*.[0-9]*.[0-9]*'
           - 'v[0-9]*.[0-9]*.[0-9]*'
+        branches-ignore:
+          - main
+    workflow_dispatch:
+        inputs:
+            version:
+                description: 'Version to stamp for the dry run'
+                required: false
+                default: '1.3.0'
+permissions:
+  contents: write # create GitHub releases
+  id-token: write # OIDC token exchange for nuget.org trusted publishing
 jobs:
   publish:
     runs-on: windows-latest
+    environment: production
+    env:
+      # Only a tag ref publishes for real; branch pushes and manual dispatch
+      # are end-to-end dry runs (everything runs except the actual pushes).
+      DRY_RUN: ${{ github.ref_type != 'tag' }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Restore dependencies
       run: dotnet restore acumatica-customizationProjectTools.slnx
@@ -16,23 +32,74 @@ jobs:
     - name: Build module in Release mode
       run: dotnet build acumatica-customizationProjectTools.slnx -c Release
 
+    - name: Determine version
+      shell: pwsh
+      env:
+          INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        $tag = if ($env:DRY_RUN -ne 'true') { $env:GITHUB_REF -replace 'refs/tags/', '' }
+               elseif ($env:INPUT_VERSION) { $env:INPUT_VERSION }
+               else { (Import-PowerShellDataFile .\AcuPackageTools\AcuPackageTools.psd1).ModuleVersion }
+        Write-Host "Version tag: $tag (dry run: $env:DRY_RUN)"
+        "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
     - name: Update Module Version from Tag
       shell: pwsh
       run: |
-        $tag = $env:GITHUB_REF -replace 'refs/tags/', ''
         $commitMsg = git log -1 --pretty=%B
         $releaseNotes = ($commitMsg -join "`n").Trim()
-        Write-Host "GitHub Tag: $tag"
+        Write-Host "GitHub Tag: $env:RELEASE_TAG"
         Write-Host "Release Notes: $releaseNotes"
-        .\.github\Update-ModuleVersion.ps1 -GitHubTag $tag -ReleaseNotes $releaseNotes
+        .\.github\Update-ModuleVersion.ps1 -GitHubTag $env:RELEASE_TAG -ReleaseNotes $releaseNotes
 
     - name: Test Module Manifest before Publish
       shell: pwsh
       run: Test-ModuleManifest -Path .\AcuPackageTools\AcuPackageTools.psd1
+
+    - name: NuGet login (trusted publishing)
+      uses: NuGet/login@v1
+      id: nuget-login
+      with:
+          user: kvanderstoep
+
+    - name: Pack and push AcuPackageTools.Core to nuget.org
+      shell: pwsh
+      env:
+          NUGET_ORG_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+      run: |
+          $version = $env:RELEASE_TAG -replace '^v', ''
+          dotnet pack src/AcuPackageTools.Core/AcuPackageTools.Core.csproj -c Release /p:Version=$version -o artifacts
+          if ($env:DRY_RUN -eq 'true') {
+            Write-Host "Dry run: skipping push. Would push:"
+            Get-ChildItem artifacts/*.nupkg | ForEach-Object { Write-Host "  $($_.Name)" }
+          }
+          else {
+            dotnet nuget push artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_ORG_API_KEY --skip-duplicate
+          }
 
     - name: Publish to PowerShell Gallery
       shell: pwsh
       env:
           NUGET_API_KEY: ${{ secrets.POWERSHELL_GALLERY_API_KEY }}
       run: |
-          Publish-Module -Path .\AcuPackageTools -NuGetApiKey $env:NUGET_API_KEY -Verbose
+          if ($env:DRY_RUN -eq 'true') {
+            Publish-Module -Path .\AcuPackageTools -NuGetApiKey $env:NUGET_API_KEY -Verbose -WhatIf
+          }
+          else {
+            Publish-Module -Path .\AcuPackageTools -NuGetApiKey $env:NUGET_API_KEY -Verbose
+          }
+
+    - name: Create GitHub release
+      if: env.DRY_RUN != 'true'
+      shell: pwsh
+      env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $env:RELEASE_TAG already exists; skipping."
+            return
+          }
+          Compress-Archive -Path .\AcuPackageTools -DestinationPath "artifacts/AcuPackageTools-$env:RELEASE_TAG.zip"
+          $notes = (git log -1 --pretty=%B | Out-String).Trim()
+          gh release create $env:RELEASE_TAG (Get-ChildItem artifacts/* | ForEach-Object FullName) --title $env:RELEASE_TAG --notes $notes

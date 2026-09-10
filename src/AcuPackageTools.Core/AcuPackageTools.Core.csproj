@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <AssemblyName>AcuPackageTools.Core</AssemblyName>
+        <RootNamespace>AcuPackageTools</RootNamespace>
+        <LangVersion>latest</LangVersion>
+        <PackageId>AcuPackageTools.Core</PackageId>
+        <Authors>Kyle Vanderstoep</Authors>
+        <Description>Client library for the Acumatica Customization API: build, import, export, publish, and manage customization packages.</Description>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/contou-consulting/acumatica-customizationProjectTools</RepositoryUrl>
+        <PackageTags>Acumatica</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    </ItemGroup>
+
+</Project>

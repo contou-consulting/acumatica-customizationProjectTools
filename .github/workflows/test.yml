@@ -9,7 +9,7 @@ jobs:
   test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Restore dependencies
         run: dotnet restore acumatica-customizationProjectTools.slnx
@@ -17,10 +17,13 @@ jobs:
       - name: Build module in Release mode
         run: dotnet build acumatica-customizationProjectTools.slnx -c Release
 
+      - name: Run .NET unit tests
+        run: dotnet test tests/AcuPackageTools.Core.UnitTests/AcuPackageTools.Core.UnitTests.csproj -c Release --no-build
+
       - name: Install Pester
         shell: pwsh
         run: |
-          Install-Module -Name Pester -Force -SkipPublisherCheck
+          Install-Module -Name Pester -Force -SkipPublisherCheck -MaximumVersion 5.99.99
 
       - name: Test Module Manifest
         shell: pwsh
