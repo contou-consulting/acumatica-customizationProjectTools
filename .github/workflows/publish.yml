@@ -4,6 +4,8 @@ on:
         tags:
           - '[0-9]*.[0-9]*.[0-9]*'
           - 'v[0-9]*.[0-9]*.[0-9]*'
+        branches-ignore:
+          - main
     workflow_dispatch:
         inputs:
             version:
@@ -18,8 +20,9 @@ jobs:
     runs-on: windows-latest
     environment: production
     env:
-      # Manual dispatch is a dry run: everything runs except the actual pushes.
-      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+      # Only a tag ref publishes for real; branch pushes and manual dispatch
+      # are end-to-end dry runs (everything runs except the actual pushes).
+      DRY_RUN: ${{ github.ref_type != 'tag' }}
     steps:
     - uses: actions/checkout@v4
 
@@ -34,7 +37,9 @@ jobs:
       env:
           INPUT_VERSION: ${{ inputs.version }}
       run: |
-        $tag = if ($env:DRY_RUN -eq 'true') { $env:INPUT_VERSION } else { $env:GITHUB_REF -replace 'refs/tags/', '' }
+        $tag = if ($env:DRY_RUN -ne 'true') { $env:GITHUB_REF -replace 'refs/tags/', '' }
+               elseif ($env:INPUT_VERSION) { $env:INPUT_VERSION }
+               else { (Import-PowerShellDataFile .\AcuPackageTools\AcuPackageTools.psd1).ModuleVersion }
         Write-Host "Version tag: $tag (dry run: $env:DRY_RUN)"
         "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
 
