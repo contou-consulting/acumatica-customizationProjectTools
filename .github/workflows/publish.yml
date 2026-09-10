@@ -24,7 +24,7 @@ jobs:
       # are end-to-end dry runs (everything runs except the actual pushes).
       DRY_RUN: ${{ github.ref_type != 'tag' }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Restore dependencies
       run: dotnet restore acumatica-customizationProjectTools.slnx
