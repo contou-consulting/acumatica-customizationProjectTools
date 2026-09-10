@@ -4,6 +4,8 @@
 # Output
 src/*/bin
 src/*/obj
+tests/*/bin
+tests/*/obj
 AcuPackageTools/*.dll
 AcuPackageTools/*.pdb
 
